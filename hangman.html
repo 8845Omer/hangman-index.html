@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Türkçe Hangman</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #121213;
+    color: white;
+    display: flex;
+}
+
+/* SOL */
+#left {
+    width: 25%;
+    border-right: 2px solid #3a3a3c;
+    padding: 20px;
+    text-align: center;
+}
+
+#errors {
+    font-size: 20px;
+    margin-bottom: 10px;
+}
+
+/* ORTA */
+#center {
+    width: 50%;
+    text-align: center;
+    padding: 20px;
+}
+
+#word {
+    font-size: 36px;
+    letter-spacing: 12px;
+    margin: 30px 0;
+}
+
+#letters button {
+    margin: 4px;
+    padding: 10px;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+button {
+    margin: 5px;
+}
+
+button:disabled {
+    opacity: 0.4;
+}
+
+/* SAĞ */
+#right {
+    width: 25%;
+    border-left: 2px solid #3a3a3c;
+    padding: 20px;
+}
+
+#meaning {
+    white-space: pre-line;
+    font-size: 15px;
+}
+
+#hint {
+    margin-top: 10px;
+    font-style: italic;
+    color: #ffd966;
+}
+
+/* SVG */
+#man svg * {
+    display: none;
+}
+
+.stick {
+    stroke: white;
+    stroke-width: 5;
+    stroke-linecap: round;
+    fill: none;
+}
+</style>
+</head>
+
+<body>
+
+<!-- SOL -->
+<div id="left">
+    <h2>❌ Hatalar</h2>
+    <div id="errors">0 / 10</div>
+
+    <div id="man">
+        <svg width="240" height="340" viewBox="0 0 240 340">
+            <!-- ASMA YERİ -->
+            <line id="base" class="stick" x1="40" y1="310" x2="200" y2="310"/>
+            <line id="pole" class="stick" x1="80" y1="310" x2="80" y2="40"/>
+            <line id="beam" class="stick" x1="80" y1="40" x2="160" y2="40"/>
+            <line id="rope" class="stick" x1="160" y1="40" x2="160" y2="70"/>
+
+            <!-- ORGANİK ADAM -->
+            <path id="head" class="stick"
+                  d="M160 72 C178 74 188 92 182 110
+                     C176 128 154 130 138 116
+                     C122 102 130 80 146 74
+                     C152 70 156 70 160 72Z"/>
+
+            <path id="body" class="stick"
+                  d="M160 112 C156 138 162 162 158 190"/>
+
+            <path id="leftArm" class="stick"
+                  d="M156 132 C132 148 118 164 110 180"/>
+
+            <path id="rightArm" class="stick"
+                  d="M162 132 C186 150 198 166 204 182"/>
+
+            <path id="leftLeg" class="stick"
+                  d="M158 190 C144 222 130 252 124 280"/>
+
+            <path id="rightLeg" class="stick"
+                  d="M162 190 C178 224 194 254 198 282"/>
+        </svg>
+    </div>
+</div>
+
+<!-- ORTA -->
+<div id="center">
+    <h1>🇹🇷 Hangman</h1>
+
+    <input type="password" id="secret" placeholder="Gizli kelime"><br>
+
+    <button onclick="baslat()">🎯 Manuel Başlat</button>
+    <button onclick="rastgeleBaslat()">🎲 Rastgele Oyun</button>
+    <button onclick="ipucuVer()">💡 İpucu</button>
+
+    <div id="word"></div>
+    <div id="letters"></div>
+
+    <br>
+    <button onclick="yeniOyun()">🔄 Yeni Oyun</button>
+</div>
+
+<!-- SAĞ -->
+<div id="right">
+    <h2>📖 Kelime Anlamı</h2>
+    <div id="meaning">—</div>
+
+    <h3>💡 İpucu</h3>
+    <div id="hint">—</div>
+</div>
+
+<script>
+const alfabe = "abcçdefgğhıijklmnoöprsştuüvyz";
+let gizliKelime = "";
+let gorunen = [];
+let hatalar = 0;
+let tdkCache = null;
+const maxHata = 10;
+
+const parcalar = [
+    base, pole, beam, rope,
+    head, body, leftArm, rightArm, leftLeg, rightLeg
+];
+
+const rastgeleKelimeler = [
+    "kalem","masa","orman","bilgi","zaman","şehir","insan","güçlü",
+    "kitap","akıl","renk","umut","hayal","denge","kural","sistem"
+];
+
+async function tdkSorgula(k) {
+    const r = await fetch("https://sozluk.gov.tr/gts?ara=" + k);
+    const d = await r.json();
+    return Array.isArray(d) ? d[0] : null;
+}
+
+function kelimeGoster() {
+    word.textContent = gorunen.join(" ");
+}
+
+function harfleriOlustur() {
+    letters.innerHTML = "";
+    for (let h of alfabe) {
+        const b = document.createElement("button");
+        b.textContent = h.toUpperCase();
+        b.onclick = () => tahmin(h, b);
+        letters.appendChild(b);
+    }
+}
+
+function guncelleAdam() {
+    errors.textContent = hatalar + " / 10";
+    for (let i = 0; i < hatalar; i++) {
+        parcalar[i].style.display = "block";
+    }
+}
+
+function sifirlaAdam() {
+    document.querySelectorAll("#man svg *").forEach(p => p.style.display = "none");
+}
+
+async function oyunHazirla(kelime) {
+    tdkCache = await tdkSorgula(kelime);
+    gizliKelime = kelime;
+    gorunen = Array(kelime.length).fill("_");
+    hatalar = 0;
+
+    secret.style.display = "none";
+    hint.textContent = "—";
+    meaning.textContent = "—";
+
+    sifirlaAdam();
+    kelimeGoster();
+    harfleriOlustur();
+    guncelleAdam();
+}
+
+async function baslat() {
+    const k = secret.value.toLowerCase();
+    const tdk = await tdkSorgula(k);
+    if (!tdk) {
+        alert("TDK'de yok");
+        return;
+    }
+    oyunHazirla(k);
+}
+
+async function rastgeleBaslat() {
+    const k = rastgeleKelimeler[Math.floor(Math.random() * rastgeleKelimeler.length)];
+    oyunHazirla(k);
+}
+
+function ipucuVer() {
+    if (!tdkCache) return;
+
+    const anlamlar = tdkCache.anlamlarListe;
+    const secilen = anlamlar[Math.floor(Math.random() * anlamlar.length)];
+    hint.textContent = secilen.anlam;
+}
+
+async function tahmin(h, btn) {
+    btn.disabled = true;
+
+    if (gizliKelime.includes(h)) {
+        for (let i = 0; i < gizliKelime.length; i++) {
+            if (gizliKelime[i] === h) gorunen[i] = h.toUpperCase();
+        }
+    } else {
+        hatalar++;
+        guncelleAdam();
+    }
+
+    kelimeGoster();
+
+    if (!gorunen.includes("_") || hatalar === maxHata) {
+        meaning.textContent =
+            gizliKelime.toUpperCase() + "\n\n" +
+            tdkCache.anlamlarListe.map((a,i)=>`${i+1}. ${a.anlam}`).join("\n");
+
+        alert(hatalar === maxHata ? "😢 Kaybettin!" : "🎉 Kazandın!");
+    }
+}
+
+function yeniOyun() {
+    gizliKelime = "";
+    gorunen = [];
+    hatalar = 0;
+    tdkCache = null;
+    secret.value = "";
+    secret.style.display = "inline";
+    word.textContent = "";
+    letters.innerHTML = "";
+    hint.textContent = "—";
+    meaning.textContent = "—";
+    sifirlaAdam();
+    errors.textContent = "0 / 10";
+}
+</script>
+
+</body>
+</html>

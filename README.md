@@ -1,1 +1,1 @@
-# hangman-index.html
+index.html
